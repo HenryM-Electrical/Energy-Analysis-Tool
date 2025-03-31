@@ -1,0 +1,7 @@
+[theme]
+base="light"
+primaryColor="#0F432F"              # British Racing Green
+backgroundColor="#D0CCD0"           # French Gray
+secondaryBackgroundColor="#FFFFFF"  # Clean white panels
+textColor="#040926"                 # Oxford Blue
+font="sans serif"

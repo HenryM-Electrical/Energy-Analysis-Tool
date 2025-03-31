@@ -41,25 +41,37 @@ if uploaded_file:
     df = df.sort_values(by='datetime')
     df.set_index('datetime', inplace=True)
 
-    # Optional date range filter
+    # Optional date range filters
     st.sidebar.subheader("Optional Filters")
     date_min = df.index.min().date()
     date_max = df.index.max().date()
-    date_range = st.sidebar.date_input("Exclude data in this date range (e.g. COVID)", [], min_value=date_min, max_value=date_max)
 
-    if len(date_range) == 2:
-        df = df[~((df.index.date >= date_range[0]) & (df.index.date <= date_range[1]))]
+    if st.sidebar.button("Reset Date Filters"):
+        st.experimental_rerun()
 
-    # Optional anomaly filter
-    apply_filter = st.checkbox("Filter anomalies from daily profile (based on standard deviation)", value=True)
+    include_range = st.sidebar.date_input("Include only this date range", [date_min, date_max], min_value=date_min, max_value=date_max)
+    if len(include_range) == 2:
+        df = df[(df.index.date >= include_range[0]) & (df.index.date <= include_range[1])]
+
+    exclude_range = st.sidebar.date_input("Exclude data in this date range (e.g. COVID)", [], min_value=date_min, max_value=date_max)
+    if len(exclude_range) == 2:
+        df = df[~((df.index.date >= exclude_range[0]) & (df.index.date <= exclude_range[1]))]
+
+    # Anomaly filter toggle using 10th–90th percentile logic
+    apply_filter = st.checkbox("Filter anomalies from daily profile (10th–90th percentile)", value=True)
 
     # ------------------ Plot 1: Energy by Day of Week ------------------
-    st.subheader("1. Energy Consumption by Day of Week")
     df['weekday'] = df.index.day_name()
     daily = df.groupby('weekday')['kwh'].sum()
     ordered_days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
     daily = daily.reindex(ordered_days)
-    st.bar_chart(daily)
+    st.subheader("1. Energy Consumption by Day of Week")
+    fig1, ax1 = plt.subplots(figsize=(10, 4))
+    ax1.bar(daily.index, daily.values, color='#0F432F')
+    ax1.set_ylabel("kWh")
+    ax1.set_title("Energy Consumption by Day of Week")
+    ax1.set_xticklabels(daily.index, rotation=45)
+    st.pyplot(fig1)  # Streamlit's built-in bar_chart does not support manual colour styling
 
     # ------------------ Plot 2: Energy Consumption by Month (Histogram Style) ------------------
     st.subheader("2. Energy Consumption by Month")
@@ -72,7 +84,7 @@ if uploaded_file:
     monthly = monthly.reindex(month_order)
 
     fig2, ax2 = plt.subplots(figsize=(10, 4))
-    ax2.bar(monthly.index, monthly.values, width=0.6)
+    ax2.bar(monthly.index, monthly.values, width=0.6, color='#0F432F')
     ax2.set_ylabel("kWh")
     ax2.set_title("Monthly Energy Consumption")
     ax2.set_xticklabels(monthly.index, rotation=45)
@@ -84,39 +96,133 @@ if uploaded_file:
     df['sort_key'] = pd.to_datetime(df['hour_minute'], format='%H:%M')
     df['sort_label'] = df['sort_key'].dt.strftime('%H:%M')
 
-    # Reorder starting from 05:00
     time_order = pd.date_range("05:00", "23:30", freq="30min").strftime("%H:%M").tolist() + \
                  pd.date_range("00:00", "04:30", freq="30min").strftime("%H:%M").tolist()
 
-    profile_data = df.groupby('sort_label')['kwh'].agg(['mean', 'std'])
-    profile_series = profile_data['mean']
-    profile_series = profile_series.reindex(time_order)
+    # Improved per-bin filtering
+    grouped = df.groupby('sort_label')['kwh']
+    filtered_means = []
+    for label in time_order:
+        if label in grouped.groups:
+            values = grouped.get_group(label)
+            q10 = values.quantile(0.10)
+            q90 = values.quantile(0.90)
+            filtered = values[(values >= q10) & (values <= q90)]
+            filtered_means.append(filtered.mean())
+        else:
+            filtered_means.append(None)
 
-    if apply_filter:
-        z_scores = np.abs(stats.zscore(profile_series.dropna()))
-        profile_series.loc[profile_series.dropna().index[z_scores >= 2.5]] = np.nan
+    filtered_profile_series = pd.Series(filtered_means, index=time_order)
 
     fig3, ax3 = plt.subplots(figsize=(10, 4))
-    profile_series.plot(ax=ax3, label='Average Load Profile')
-    profile_series.rolling(4, center=True).mean().plot(ax=ax3, linestyle='--', label='Trend Line')
+    if apply_filter:
+        filtered_profile_series.plot(ax=ax3, label='Filtered Profile (10–90%)', color='#8B635C', linestyle='--')
+        filtered_profile_series.rolling(4, center=True).mean().plot(ax=ax3, linestyle='-', label='Trend Line', color='#0F432F')
+    else:
+        profile_data = df.groupby('sort_label')['kwh'].agg(['mean'])
+        profile_series = profile_data['mean'].reindex(time_order)
+        profile_series.plot(ax=ax3, label='Unfiltered Profile', color='#0F432F')
+        profile_series.rolling(4, center=True).mean().plot(ax=ax3, linestyle='--', label='Trend Line', color='#8B635C')
+
     ax3.set_ylabel("kWh")
     ax3.set_xlabel("Time of Day (starting 5am)")
     ax3.set_title("Average Daily Profile")
+    ax3.set_xticks([i for i, t in enumerate(time_order) if t.endswith(':00')])
+    ax3.set_xticklabels([t for t in time_order if t.endswith(':00')], rotation=45)
     ax3.legend()
     st.pyplot(fig3)
 
-    # ------------------ Plot 4: Diversity Curve ------------------
-    st.subheader("4. Diversity Curve (Normalised to Max Demand)")
-    diversity_curve = profile_series / profile_series.max()
+    # ------------------ Plot 4: Diversity Curve (Normalised to 95th Percentile in Filtered Range) ------------------
+    st.subheader("4. Diversity Curve")
+
+    # Set reference peak based on filter setting
+    if apply_filter:
+        all_filtered_values = []
+        for label in time_order:
+            if label in grouped.groups:
+                values = grouped.get_group(label)
+                q10 = values.quantile(0.10)
+                q90 = values.quantile(0.90)
+                filtered = values[(values >= q10) & (values <= q90)]
+                all_filtered_values.extend(filtered)
+        reference_peak = pd.Series(all_filtered_values).quantile(0.95)
+        diversity_curve = filtered_profile_series / reference_peak
+    else:
+        profile_data = df.groupby('sort_label')['kwh'].agg(['mean'])
+        profile_series = profile_data['mean'].reindex(time_order)
+        reference_peak = df['kwh'].quantile(0.95)
+        diversity_curve = profile_series / reference_peak
 
     fig4, ax4 = plt.subplots(figsize=(10, 4))
-    diversity_curve.plot(ax=ax4, label='Diversity Curve (0.0 - 1.0)', color='green')
-    ax4.set_ylabel("Normalised Load")
+    diversity_curve.plot(ax=ax4, label='Diversity Curve', color='#0F432F')
+    ax4.set_ylabel("Diversity Factor")
     ax4.set_xlabel("Time of Day (starting 5am)")
     ax4.set_title("Diversity Curve")
-    ax4.set_ylim(0, 1.05)
+    ax4.set_ylim(0, diversity_curve.max() * 1.1)
+    ax4.set_xticks([i for i, t in enumerate(time_order) if t.endswith(':00')])
+    ax4.set_xticklabels([t for t in time_order if t.endswith(':00')], rotation=45)
     ax4.legend()
     st.pyplot(fig4)
 
-else:
-    st.info("Please upload a CSV or Excel file to get started.")
+    # ------------------ Table: Hourly Diversity Factors ------------------
+    st.subheader("5. Hourly Diversity Factors Table")
+
+    # Use datetime-aware index for resampling
+    filtered_datetime_index = pd.date_range("2000-01-01 05:00", periods=len(filtered_profile_series), freq="30min")
+    filtered_profile_series_dt = pd.Series(filtered_profile_series.values, index=filtered_datetime_index)
+    hourly_resampled = filtered_profile_series_dt.resample("1H").mean()
+
+    hourly_order = pd.date_range("2000-01-01 05:00", "2000-01-02 04:00", freq="1H")
+    hourly_resampled = hourly_resampled.reindex(hourly_order).fillna(0)
+
+    # Use correct reference peak from filtered data
+    hourly_diversity = (hourly_resampled / reference_peak).round(3)
+
+    # Create DataFrame
+    time_labels = hourly_order.strftime("%H:%M").tolist()
+    diversity_values = hourly_diversity.values.tolist()
+
+    # HTML table with reduced font size and brand colours
+    time_cells = ''.join([f"<td>{t}</td>" for t in time_labels])
+    diversity_cells = ''.join([f"<td>{v}</td>" for v in diversity_values])
+
+    table_html = """
+    <style>
+        .diversity-table {
+            font-size: 12px;
+            border-collapse: collapse;
+            color: #040926;
+        }
+        .diversity-table th, .diversity-table td {
+            padding: 4px 6px;
+            border: 1px solid #D0CCD0;
+            text-align: center;
+        }
+        .diversity-table th {
+            background-color: #93A29B;
+        }
+        .diversity-table td {
+            background-color: #FFFFFF;
+        }
+    </style>
+    <table class='diversity-table'>
+        <tr><th>Time</th>""" + time_cells + """</tr>
+        <tr><th>Diversity Factor</th>""" + diversity_cells + """</tr>
+    </table>
+    """
+
+    st.markdown(table_html, unsafe_allow_html=True)
+
+
+
+    # Offer CSV download
+    diversity_csv = pd.DataFrame([diversity_values], columns=time_labels, index=["Diversity Factor"])
+    csv = diversity_csv.to_csv(index=False).encode('utf-8')
+    st.download_button(
+        label="Download CSV",
+        data=csv,
+        file_name='diversity_factors.csv',
+        mime='text/csv',
+    )
+
+
