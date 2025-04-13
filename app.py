@@ -5,6 +5,19 @@ import matplotlib.pyplot as plt
 from scipy import stats
 
 st.set_page_config(page_title="Energy Analysis Tool", layout="wide")
+
+# Google Analytics (G-2Z50C9EQP7)
+st.markdown("""
+<!-- Global site tag (gtag.js) - Google Analytics -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-2Z50C9EQP7"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-2Z50C9EQP7');
+</script>
+""", unsafe_allow_html=True)
+
 st.title("🔌 Energy Consumption Analysis Tool")
 
 st.markdown("""
