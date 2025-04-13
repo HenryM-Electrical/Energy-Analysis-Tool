@@ -11,12 +11,13 @@ A simple and powerful Streamlit app for analysing half-hourly (or similar) energ
 This tool allows users to upload energy usage data and instantly visualise:
 
 1. 📅 **Energy Consumption by Day of the Week**
-2. 📆 **Energy Consumption by Month** (histogram format)
-3. 🕒 **Average Daily Profile** (from 5am to 5am, with optional trend line)
-4. 📉 **Diversity Curve** (normalised to 95th percentile of selected data)
-5. 🧮 **Hourly Diversity Factor Table** (downloadable and copyable)
-6. 🧹 Option to **filter anomalies** using 10th–90th percentile logic
-7. 📅 Optional **date range inclusion/exclusion filters** (e.g. exclude COVID period)
+2. 📆 **Energy Consumption by Month** (histogram style)
+3. 🕒 **Average Daily Profile** (from 5am to 5am, with optional anomaly filtering and trend line)
+4. 📈 **Maximum Daily Profile** (from 5am to 5am, shows peak value per time block)
+5. 📉 **Diversity Curve** (normalised to 95th percentile of filtered or unfiltered data)
+6. 🧮 **Hourly Diversity Factor Table** (auto-generated from the diversity curve, downloadable as CSV)
+7. 🧹 Option to **filter anomalies** using 10th–90th percentile logic across all time-based plots
+8. 📅 Optional **date range inclusion/exclusion filters** (e.g. exclude COVID period)
 
 ---
 
@@ -32,7 +33,7 @@ Upload a `.csv` or `.xlsx` file with the following three columns:
 - **Time**: Format like `HH:MM` (e.g. `14:00`)
 - **Value (kWh)**: Numeric value representing energy consumption
 
-> Column headers don't have to match exactly — the app will standardise them automatically.
+> Column headers don't have to match exactly — the app uses fuzzy matching to standardise them.
 
 ---
 
@@ -79,6 +80,19 @@ streamlit run app.py
 
 Need test data? Try this downloadable 2-year sample with weekday/weekend trends and embedded anomalies:  
 📥 [example_energy_data_2years_from_original.xlsx](https://energy-analysis-tool.streamlit.app/example_energy_data_2years_from_original.xlsx)
+
+---
+
+## 🌟 Recent Enhancements
+✅ Maximum Daily Profile (Plot 3B) now reflects filtering toggle
+
+✅ Diversity Table and curve logic fixed to avoid values > 1.0 when filtering is off
+
+✅ Downloadable CSV for hourly diversity factors
+
+✅ Footer-styled MIT license block with collapsible toggle
+
+✅ Refined dark theme compatibility and styling polish
 
 ---
 
